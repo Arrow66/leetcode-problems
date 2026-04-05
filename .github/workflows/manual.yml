@@ -1,0 +1,80 @@
+name: Bulk LeetCode Import to WordPress
+on:
+  workflow_dispatch: # ONLY runs when you manually click "Run workflow"
+
+jobs:
+  bulk-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Get all files
+
+      - name: Process All Folders and Post
+        env:
+          WP_USER: ${{ secrets.WP_USERNAME }}
+          WP_PASS: ${{ secrets.WP_PASSWORD }}
+          WP_URL: "https://arrow66.dev/wp-json/wp/v2"
+          TAG_ID: 5
+        run: |
+          DATE=$(date +'%Y-%m-%d')
+          DAILY_TITLE="LeetCode Archive Import - $DATE"
+          FINAL_HTML=""
+
+          # Loop through every directory in the repo
+          for FOLDER in */; do
+            FOLDER=${FOLDER%/} # Remove trailing slash
+            
+            # Skip hidden folders like .github or .git
+            if [[ "$FOLDER" == .* ]]; then continue; fi
+            
+            README_FILE="$FOLDER/README.md"
+            
+            # Only process if a README exists (signals a problem folder)
+            if [ -f "$README_FILE" ]; then
+              echo "Processing $FOLDER..."
+              
+              # 1. Format Title
+              PROBLEM_TITLE=$(echo $FOLDER | sed 's/-/ /g' | sed 's/_/ /g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1')
+              
+              # 2. Extract README and Solution
+              README_HTML=$(cat "$README_FILE" 2>/dev/null | sed 's/$/<br>/')
+              PY_CONTENT=$(cat "$FOLDER"/*.py 2>/dev/null | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+
+              # 3. Detect Difficulty Badge
+              if grep -qi "Easy" "$README_FILE"; then
+                BADGE="<span style='background:#5cb85c; color:white; padding:4px 10px; border-radius:12px; font-size:12px; margin-left:10px; vertical-align:middle;'>Easy</span>"
+              elif grep -qi "Medium" "$README_FILE"; then
+                BADGE="<span style='background:#f0ad4e; color:white; padding:4px 10px; border-radius:12px; font-size:12px; margin-left:10px; vertical-align:middle;'>Medium</span>"
+              elif grep -qi "Hard" "$README_FILE"; then
+                BADGE="<span style='background:#d9534f; color:white; padding:4px 10px; border-radius:12px; font-size:12px; margin-left:10px; vertical-align:middle;'>Hard</span>"
+              else
+                BADGE=""
+              fi
+
+              # 4. Append to the master HTML string
+              FINAL_HTML+="<div style='border:1px solid #eaeaea; padding:20px; margin-bottom:30px; border-radius:10px; font-family: sans-serif;'>
+                <h2 style='margin-top:0; color:#2c3e50;'>$PROBLEM_TITLE $BADGE</h2>
+                <div style='color:#34495e; line-height:1.6; margin-bottom:15px;'>$README_HTML</div>
+                <h3 style='border-bottom:2px solid #3498db; display:inline-block; padding-bottom:5px;'>Python Solution</h3>
+                <pre style='background:#2d2d2d; color:#f8f8f2; padding:15px; border-radius:6px; overflow-x:auto; font-size:14px;'><code>$PY_CONTENT</code></pre>
+              </div>"
+            fi
+          done
+
+          # 5. Send the entire collection to WordPress
+          if [ -n "$FINAL_HTML" ]; then
+            echo "Sending all problems to WordPress..."
+            curl -X POST "$WP_URL/posts" \
+              -u "$WP_USER:$WP_PASS" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"title\": \"$DAILY_TITLE\",
+                \"content\": $(echo "$FINAL_HTML" | jq -Rs .),
+                \"tags\": [$TAG_ID],
+                \"status\": \"publish\"
+              }"
+          else
+            echo "No problems found to import."
+          fi
