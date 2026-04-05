@@ -74,7 +74,7 @@ jobs:
                 \"title\": \"$DAILY_TITLE\",
                 \"content\": $(echo "$FINAL_HTML" | jq -Rs .),
                 \"tags\": [$TAG_ID],
-                \"status\": \"publish\"
+                \"status\": \"publish\",
                 \"author\": 1
               }"
           else
