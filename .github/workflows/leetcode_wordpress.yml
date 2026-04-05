@@ -1,0 +1,87 @@
+name: LeetCode Folder to WordPress with Badges
+on:
+  push:
+    paths:
+      - '**/README.md'
+      - '**.py'
+
+jobs:
+  sync-to-blog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 
+
+      - name: Process Folder and Post
+        env:
+          WP_USER: ${{ secrets.WP_USERNAME }}
+          WP_PASS: ${{ secrets.WP_PASSWORD }}
+          WP_URL: "https://arrow66.dev/wp-json/wp/v2"
+          TAG_ID: 5
+        run: |
+          DATE=$(date +'%Y-%m-%d')
+          DAILY_TITLE="LeetCode Solutions - $DATE"
+          
+          # 1. Identify the folder of the problem just solved
+          FOLDER=$(git diff-tree --no-commit-id --name-only -r HEAD | grep '/' | cut -d '/' -f 1 | head -n 1)
+          
+          if [ -z "$FOLDER" ] || [ ! -d "$FOLDER" ]; then
+            echo "No valid problem folder found in this commit. Skipping."
+            exit 0
+          fi
+
+          # 2. Extract Data from Folder
+          PROBLEM_TITLE=$(echo $FOLDER | sed 's/-/ /g' | sed 's/_/ /g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1')
+          README_FILE="$FOLDER/README.md"
+          README_HTML=$(cat "$README_FILE" 2>/dev/null | sed 's/$/<br>/' || echo "Description not found.")
+          
+          # Escape Python code for HTML safety
+          PY_CONTENT=$(cat "$FOLDER"/*.py 2>/dev/null | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+
+          # 3. Detect Difficulty Badge (Green for Easy, Orange for Medium, Red for Hard)
+          if grep -qi "Easy" "$README_FILE"; then
+            BADGE="<span style='background:#5cb85c; color:white; padding:4px 10px; border-radius:12px; font-size:12px; margin-left:10px; vertical-align:middle;'>Easy</span>"
+          elif grep -qi "Medium" "$README_FILE"; then
+            BADGE="<span style='background:#f0ad4e; color:white; padding:4px 10px; border-radius:12px; font-size:12px; margin-left:10px; vertical-align:middle;'>Medium</span>"
+          elif grep -qi "Hard" "$README_FILE"; then
+            BADGE="<span style='background:#d9534f; color:white; padding:4px 10px; border-radius:12px; font-size:12px; margin-left:10px; vertical-align:middle;'>Hard</span>"
+          else
+            BADGE=""
+          fi
+
+          # 4. Build the HTML Block
+          NEW_BLOCK="<div style='border:1px solid #eaeaea; padding:20px; margin-bottom:30px; border-radius:10px; font-family: sans-serif;'>
+            <h2 style='margin-top:0; color:#2c3e50;'>$PROBLEM_TITLE $BADGE</h2>
+            <div style='color:#34495e; line-height:1.6; margin-bottom:15px;'>$README_HTML</div>
+            <h3 style='border-bottom:2px solid #3498db; display:inline-block; padding-bottom:5px;'>Python Solution</h3>
+            <pre style='background:#2d2d2d; color:#f8f8f2; padding:15px; border-radius:6px; overflow-x:auto; font-size:14px;'><code>$PY_CONTENT</code></pre>
+          </div>"
+
+          # 5. WordPress Sync Logic
+          # Search for today's post
+          SEARCH_URL="$WP_URL/posts?search=$(echo $DAILY_TITLE | sed 's/ /%20/g')"
+          EXISTING_POST=$(curl -s -u "$WP_USER:$WP_PASS" "$SEARCH_URL")
+          POST_ID=$(echo $EXISTING_POST | jq -r '.[0].id // empty')
+
+          if [ -n "$POST_ID" ] && [ "$POST_ID" != "null" ]; then
+            # Append to existing post
+            OLD_HTML=$(echo $EXISTING_POST | jq -r '.[0].content.rendered')
+            FINAL_BODY="$OLD_HTML $NEW_BLOCK"
+            curl -X POST "$WP_URL/posts/$POST_ID" \
+              -u "$WP_USER:$WP_PASS" \
+              -H "Content-Type: application/json" \
+              -d "{\"content\": $(echo "$FINAL_BODY" | jq -Rs .)}"
+          else
+            # Create new post
+            curl -X POST "$WP_URL/posts" \
+              -u "$WP_USER:$WP_PASS" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"title\": \"$DAILY_TITLE\",
+                \"content\": $(echo "$NEW_BLOCK" | jq -Rs .),
+                \"tags\": [$TAG_ID],
+                \"status\": \"publish\"
+              }"
+          fi
