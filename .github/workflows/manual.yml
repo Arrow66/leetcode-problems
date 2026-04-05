@@ -66,7 +66,7 @@ jobs:
           # 5. Send the entire collection to WordPress
           if [ -n "$FINAL_HTML" ]; then
             echo "Sending all problems to WordPress..."
-            curl -X POST "$WP_URL/posts" \
+            curl -L -X POST "$WP_URL/posts" \
               -u "$WP_USER:$WP_PASS" \
               -w "%{http_code}" \
               -H "Content-Type: application/json" \
