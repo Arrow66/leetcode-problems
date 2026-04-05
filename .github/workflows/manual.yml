@@ -68,6 +68,7 @@ jobs:
             echo "Sending all problems to WordPress..."
             curl -X POST "$WP_URL/posts" \
               -u "$WP_USER:$WP_PASS" \
+              -w "%{http_code}"
               -H "Content-Type: application/json" \
               -d "{
                 \"title\": \"$DAILY_TITLE\",
