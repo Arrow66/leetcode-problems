@@ -74,6 +74,7 @@ jobs:
                 \"content\": $(echo "$FINAL_HTML" | jq -Rs .),
                 \"tags\": [$TAG_ID],
                 \"status\": \"publish\"
+                \"author\": 1
               }"
           else
             echo "No problems found to import."
