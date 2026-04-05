@@ -4,6 +4,7 @@ on:
     paths:
       - '**/README.md'
       - '**.py'
+  workflow_dispatch:
 
 jobs:
   sync-to-blog:
